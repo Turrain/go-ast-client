@@ -57,5 +57,33 @@ To make a call from Asterisk, you can use the following command:
 ```sh
 channel originate PJSIP/7000 extension 7000@from-internal
 ```
+with settings
+```asterisk
+[from-internal]
+exten = 7000,1,Verbose("Call to AudioSocket via Dialplan Application")
+ same = n,Answer()
+ same = n,AudioSocket(40325ec2-5efd-4bd3-805f-53576e581d13,localhost:9092)
+ same = n,Hangup()
+```
+```toml
+[7000]
+type=endpoint
+context=from-external
+disallow=all
+allow=ulaw
+transport=transport-udp
+auth=7000
+aors=7000
 
+[7000]
+type=auth
+auth_type=userpass
+password=pass
+username=7000
+
+[7000]
+type=aor
+remove_existing=yes
+max_contacts=1
+```
 This command will originate a call to the PJSIP endpoint `7000` and connect it to the extension `7000` in the `from-internal` context.
