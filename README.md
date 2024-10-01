@@ -88,3 +88,9 @@ max_contacts=1
 ```
 This command will originate a call to the PJSIP endpoint `7000` and connect it to the extension `7000` in the `from-internal` context.
 
+## TODO:
+
+1. Review the [Whisper CPP Server](https://github.com/litongjava/whisper-cpp-server) and update the client implementation if necessary.
+2. Implement a microphone port for local machine usage.
+3. Improve transcription accuracy.
+
