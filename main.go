@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"time"
@@ -45,7 +46,7 @@ func main() {
 	var err error
 	ctx := context.Background()
 
-	client.AddSystemPrompt("You speak only on russian and you have a limit in one-two sentences and 180 symbols!")
+	client.AddSystemPrompt("You speak only on russian and you have a limit in two-three sentences and 180 symbols!")
 
 	log.Println("listening for AudioSocket connections on", listenAddr)
 	if err = Listen(ctx); err != nil {
@@ -116,7 +117,8 @@ func Handle(pCtx context.Context, c net.Conn) {
 				continue
 			}
 			audioData := m.Payload()
-
+			//	threshold := int16(0x02)
+			//	audioDataReduced := NoiseGate(audioData, threshold)
 			floatArray, err := pcmToFloat32Array(audioData)
 			if err != nil {
 				log.Println("error converting pcm to float32:", err)
@@ -127,6 +129,7 @@ func Handle(pCtx context.Context, c net.Conn) {
 				log.Println("Error processing VAD:", err)
 			} else if active {
 				inputAudioBuffer = append(inputAudioBuffer, floatArray)
+				calculateAudioLength(inputAudioBuffer, rate)
 				silenceCount = 0
 			} else {
 				silenceCount++
@@ -148,11 +151,23 @@ func handleInputAudio(conn net.Conn, buffer [][]float32) {
 	for _, data := range buffer {
 		mergedBuffer = append(mergedBuffer, data...)
 	}
-
+	length := calculateAudioLength(buffer, 16000)
+	log.Println("Audio length:", length)
+	if length < 0.40 {
+		log.Println("Audio length is less than 0.45 seconds, skipping processing.")
+		return
+	}
 	transcription, err := sendFloat32ArrayToServer("http://localhost:8002/complete_transcribe_r", mergedBuffer)
 	if err != nil {
 		log.Println("Error sending data to server:", err)
 		return
+	}
+	excludedWords := []string{"Продолжение следует...", "Субтитры сделал DimaTorzok", "Субтитры создавал DimaTorzok"}
+	for _, word := range excludedWords {
+		if transcription == word {
+			log.Println("Transcription contains excluded word, stopping further processing.")
+			return
+		}
 	}
 	res, errO := client.GenerateNoStream("gemma2:9b", transcription, nil, "")
 
@@ -168,6 +183,38 @@ func handleInputAudio(conn net.Conn, buffer [][]float32) {
 	log.Println("Using transcription:", transcription)
 	websocketSendReceive(websocketURI, data, conn)
 
+}
+
+func calculateAudioLength(inputAudioBuffer [][]float32, sampleRate int) float64 {
+	// Calculate total number of samples in the buffer
+	totalSamples := 0
+	for _, buffer := range inputAudioBuffer {
+		totalSamples += len(buffer)
+	}
+
+	// Calculate length in seconds
+	lengthInSeconds := float64(totalSamples) / float64(sampleRate)
+	return lengthInSeconds
+}
+
+func NoiseGate(input []byte, threshold int16) []byte {
+	sampleCount := len(input) / 2
+	output := make([]byte, len(input))
+
+	for i := 0; i < sampleCount; i++ {
+		// Extract the sample (int16) from the byte slice
+		sample := int16(binary.LittleEndian.Uint16(input[i*2 : i*2+2]))
+
+		// Apply the noise gate
+		if math.Abs(float64(sample)) < float64(threshold) {
+			sample = 0
+		}
+
+		// Store the processed sample back as bytes
+		binary.LittleEndian.PutUint16(output[i*2:i*2+2], uint16(sample))
+	}
+
+	return output
 }
 
 func pcmToFloat32Array(pcmData []byte) ([]float32, error) {
@@ -270,3 +317,12 @@ func websocketSendReceive(uri string, data map[string]interface{}, conn net.Conn
 		}
 	}
 }
+
+// func noiseGate(samples []float64, threshold float64) []float64 {
+// 	for i, sample := range samples {
+// 		if math.Abs(sample) < threshold {
+// 			samples[i] = 0
+// 		}
+// 	}
+// 	return samples
+// }

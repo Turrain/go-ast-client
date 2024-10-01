@@ -87,3 +87,4 @@ remove_existing=yes
 max_contacts=1
 ```
 This command will originate a call to the PJSIP endpoint `7000` and connect it to the extension `7000` in the `from-internal` context.
+
